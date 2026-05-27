@@ -1,0 +1,8 @@
+venv/
+__pycache__/
+*.pyc
+.env
+glucoverse.db
+uploads/
+app/ml/*.pkl
+app/ml/metrics.json
