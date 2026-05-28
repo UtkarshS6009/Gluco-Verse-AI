@@ -1,54 +1,71 @@
-import json
+import os
 import shutil
-from pathlib import Path
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 
-from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException
-from sqlalchemy.orm import Session
-
-from app.core.config import UPLOAD_DIR
-from app.db.database import get_db
-from app.models.report import Report
-from app.schemas.report_schema import OCRExtractResponse, ReportResponse
-from app.services.ocr_service import process_report_image
+from app.services.ocr_service import scan_report
 
 router = APIRouter()
 
-@router.post("/ocr/extract", response_model=OCRExtractResponse)
-def extract_report_values(
+UPLOAD_DIR = "uploads"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+
+@router.post("/ocr/extract")
+async def extract_report(
     patient_name: str = Form(...),
-    file: UploadFile = File(...),
-    db: Session = Depends(get_db)
+    file: UploadFile = File(...)
 ):
-    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-
-    file_path = UPLOAD_DIR / file.filename
-
-    with file_path.open("wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-
     try:
-        result = process_report_image(str(file_path))
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"OCR processing failed: {str(exc)}")
+        print("OCR request received")
+        print("Patient:", patient_name)
+        print("File:", file.filename)
 
-    report = Report(
-        patient_name=patient_name,
-        file_name=file.filename,
-        extracted_text=result["text"],
-        extracted_values_json=json.dumps(result["values"])
-    )
+        if not file.filename:
+            raise HTTPException(status_code=400, detail="No file uploaded")
 
-    db.add(report)
-    db.commit()
-    db.refresh(report)
+        allowed_extensions = [".png", ".jpg", ".jpeg"]
+        ext = os.path.splitext(file.filename)[1].lower()
 
-    return OCRExtractResponse(
-        patient_name=patient_name,
-        file_name=file.filename,
-        extracted_values=result["values"],
-        extracted_text_preview=result["text"][:500]
-    )
+        if ext not in allowed_extensions:
+            raise HTTPException(
+                status_code=400,
+                detail="Only PNG, JPG, and JPEG files are supported"
+            )
 
-@router.get("/ocr/reports", response_model=list[ReportResponse])
-def get_reports(db: Session = Depends(get_db)):
-    return db.query(Report).order_by(Report.created_at.desc()).all()
+        safe_filename = file.filename.replace(" ", "_")
+        file_path = os.path.join(UPLOAD_DIR, safe_filename)
+
+        print("Saving file...")
+
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+
+        print("File saved:", file_path)
+        print("Starting OCR...")
+
+        result = scan_report(file_path)
+
+        print("OCR finished")
+
+        return {
+            "patient_name": patient_name,
+            "filename": file.filename,
+            "extracted_values": result.get("extracted_values", {}),
+            "extracted_text_preview": result.get("extracted_text", "")[:1200]
+        }
+
+    except RuntimeError as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"OCR timeout or runtime error: {str(e)}"
+        )
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        print("OCR error:", str(e))
+        raise HTTPException(
+            status_code=500,
+            detail=f"OCR failed: {str(e)}"
+        )
