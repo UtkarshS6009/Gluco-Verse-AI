@@ -68,4 +68,4 @@ async def extract_report(
         raise HTTPException(
             status_code=500,
             detail=f"OCR failed: {str(e)}"
-        )
+

@@ -10,4 +10,4 @@ class AuthUser(Base):
     email = Column(String, unique=True, index=True, nullable=False)
     password_hash = Column(String, nullable=False)
     role = Column(String, default="patient")
-    created_at = Column(DateTime, default=datetime.utcnow)
+

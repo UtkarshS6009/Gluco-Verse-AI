@@ -41,22 +41,6 @@ def preprocess_image(image_path: str):
     return threshold
 
 
-def extract_number_near_label(text: str, labels: list[str]):
-    text_lower = text.lower()
-
-    for label in labels:
-        pattern = rf"{label.lower()}[^0-9]{{0,30}}([0-9]+(?:\.[0-9]+)?)"
-        match = re.search(pattern, text_lower)
-
-        if match:
-            return float(match.group(1))
-
-    return None
-
-
-def extract_medical_values(text: str):
-    values = {}
-
     glucose = extract_number_near_label(
         text,
         ["glucose", "blood glucose", "fasting glucose", "random glucose", "sugar", "fbs"]
@@ -115,4 +99,3 @@ def scan_report(image_path: str):
     return {
         "extracted_text": text,
         "extracted_values": extracted_values
-    }

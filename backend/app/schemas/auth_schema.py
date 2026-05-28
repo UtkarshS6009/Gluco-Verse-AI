@@ -15,4 +15,4 @@ class AuthResponse(BaseModel):
     user_id: int
     full_name: str
     email: str
-    role: str
+

@@ -12,4 +12,3 @@ def verify_password(password: str, stored_hash: str) -> bool:
         new_hash = hashlib.sha256((salt + password).encode()).hexdigest()
         return secrets.compare_digest(new_hash, old_hash)
     except Exception:
-        return False
