@@ -13,7 +13,8 @@ from app.api.ocr import router as ocr_router
 from app.api.doctor import router as doctor_router
 from app.api.admin import router as admin_router
 from app.api.assistant import router as assistant_router
-
+from app.models.auth_user import AuthUser
+from app.api.auth import router as auth_router
 
 Base.metadata.create_all(bind=engine)
 
@@ -22,7 +23,7 @@ app = FastAPI(
     description="Local-first AI preventive healthcare SaaS backend for diabetes risk prediction, OCR report scanning, history tracking, doctor panel, admin analytics, and Ollama assistant.",
     version="1.0.0"
 )
-
+app.include_router(auth_router, prefix="/api", tags=["Authentication"])
 # CORS must be added AFTER app = FastAPI(...)
 app.add_middleware(
     CORSMiddleware,

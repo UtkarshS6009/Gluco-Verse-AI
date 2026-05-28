@@ -1,7 +1,13 @@
 import re
 import cv2
+import numpy as np
 import pytesseract
 from pathlib import Path
+
+# Windows Tesseract path
+# Change this path only if your tesseract.exe is installed somewhere else.
+pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+
 
 def preprocess_image(image_path: str):
     image = cv2.imread(image_path)
@@ -9,47 +15,104 @@ def preprocess_image(image_path: str):
     if image is None:
         raise ValueError("Could not read uploaded image.")
 
+    # Resize very large images to avoid OCR hanging
+    height, width = image.shape[:2]
+
+    max_width = 1200
+    if width > max_width:
+        scale = max_width / width
+        new_width = int(width * scale)
+        new_height = int(height * scale)
+        image = cv2.resize(image, (new_width, new_height))
+
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    denoised = cv2.medianBlur(gray, 3)
-    threshold = cv2.threshold(
-        denoised, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
-    )[1]
+
+    gray = cv2.GaussianBlur(gray, (3, 3), 0)
+
+    threshold = cv2.adaptiveThreshold(
+        gray,
+        255,
+        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY,
+        31,
+        2
+    )
 
     return threshold
 
-def extract_text_from_image(image_path: str) -> str:
-    processed_image = preprocess_image(image_path)
-    text = pytesseract.image_to_string(processed_image)
-    return text
 
-def extract_medical_values_from_text(text: str) -> dict:
-    cleaned = text.lower().replace(":", " ").replace("=", " ")
+def extract_number_near_label(text: str, labels: list[str]):
+    text_lower = text.lower()
 
-    patterns = {
-        "glucose": r"(glucose|blood sugar|fasting glucose|fbs)\D{0,30}(\d+(\.\d+)?)",
-        "blood_pressure": r"(blood pressure|bp)\D{0,30}(\d{2,3})",
-        "insulin": r"(insulin)\D{0,30}(\d+(\.\d+)?)",
-        "bmi": r"(bmi|body mass index)\D{0,30}(\d+(\.\d+)?)",
-        "hba1c": r"(hba1c|hb a1c|a1c)\D{0,30}(\d+(\.\d+)?)"
-    }
+    for label in labels:
+        pattern = rf"{label.lower()}[^0-9]{{0,30}}([0-9]+(?:\.[0-9]+)?)"
+        match = re.search(pattern, text_lower)
 
+        if match:
+            return float(match.group(1))
+
+    return None
+
+
+def extract_medical_values(text: str):
     values = {}
 
-    for key, pattern in patterns.items():
-        match = re.search(pattern, cleaned)
-        if match:
-            try:
-                values[key] = float(match.group(2))
-            except ValueError:
-                pass
+    glucose = extract_number_near_label(
+        text,
+        ["glucose", "blood glucose", "fasting glucose", "random glucose", "sugar", "fbs"]
+    )
+
+    hba1c = extract_number_near_label(
+        text,
+        ["hba1c", "hb a1c", "glycated hemoglobin"]
+    )
+
+    bmi = extract_number_near_label(
+        text,
+        ["bmi", "body mass index"]
+    )
+
+    insulin = extract_number_near_label(
+        text,
+        ["insulin"]
+    )
+
+    blood_pressure = extract_number_near_label(
+        text,
+        ["blood pressure", "bp"]
+    )
+
+    if glucose is not None:
+        values["glucose"] = glucose
+
+    if hba1c is not None:
+        values["hba1c"] = hba1c
+
+    if bmi is not None:
+        values["bmi"] = bmi
+
+    if insulin is not None:
+        values["insulin"] = insulin
+
+    if blood_pressure is not None:
+        values["blood_pressure"] = blood_pressure
 
     return values
 
-def process_report_image(image_path: str) -> dict:
-    text = extract_text_from_image(image_path)
-    values = extract_medical_values_from_text(text)
+
+def scan_report(image_path: str):
+    processed_image = preprocess_image(image_path)
+
+    # Timeout prevents infinite loading
+    text = pytesseract.image_to_string(
+        processed_image,
+        config="--psm 6",
+        timeout=20
+    )
+
+    extracted_values = extract_medical_values(text)
 
     return {
-        "text": text,
-        "values": values
+        "extracted_text": text,
+        "extracted_values": extracted_values
     }
